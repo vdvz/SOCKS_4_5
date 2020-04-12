@@ -1,5 +1,6 @@
 import java.io.IOException;
 import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
@@ -11,35 +12,43 @@ public class Client {
     final byte command = 0x01;
     final int port_number = 80;
     Integer ip = 2130706433;//127.0.0.1
+
     ByteBuffer buffer;
+    String ID = "vizir";
+    String Password = "vadim";
 
+    private void send_buffer(SocketChannel socket) throws IOException {
+        buffer.flip();
+        System.out.println("SEND: " + socket.write(buffer));
+    }
 
-    private void send_buffer(Socket socket) throws IOException {
-        buffer.rewind();
-        System.out.println("send bytes: " + buffer.array().length);
-        socket.getOutputStream().write(buffer.array());
-        socket.getOutputStream().flush();
+    public void receive_buffer(SocketChannel socket) throws IOException {
+        buffer.clear();
+        int i  = socket.read(buffer);
+        System.out.println("GET BYTES: " + i);
         buffer.rewind();
     }
 
-    public void receive_buffer(Socket socket) throws IOException {
-        buffer.rewind();
-        System.out.println("size capacity " + buffer.capacity());
-        int i = socket.getInputStream().read(buffer.array());
-        buffer.rewind();
-        System.out.println("receive bytes: " + i);
-    }
-
-    public void make_SOCKS5(Socket server) throws IOException {
-        buffer = ByteBuffer.allocate(3);
-        buffer.put((byte)0x05).put((byte)0x01).put((byte)0x00);
+    public void make_SOCKS5(SocketChannel server) throws IOException {
+        buffer = ByteBuffer.allocate(100);
+        buffer.put((byte)0x05).put((byte)0x02).put((byte)0x00).put((byte)0x02);
         send_buffer(server);
 
         receive_buffer(server);
         buffer.get();
-        System.out.println("Method:" + buffer.get());
+        byte code = buffer.get();
+        System.out.println("CODE: " + code);
+        if(code == 0x02){
+            buffer.clear();
+            buffer.put((byte)0x01).put((byte)ID.getBytes().length).put(ID.getBytes()).put((byte)Password.getBytes().length).put(Password.getBytes());
+            send_buffer(server);
+            receive_buffer(server);
+            buffer.get();
+            if(buffer.get()!=0x00) return;
+        }
 
-        buffer = ByteBuffer.allocate(10);
+        buffer.clear();
+
         buffer.put((byte)0x05).put((byte)0x01).put((byte)0x00).put((byte)0x01).put(InetAddress.getByName("localhost").getAddress()).putShort((short)81);
 
         send_buffer(server);
@@ -61,9 +70,9 @@ public class Client {
     }
 
 
-    public void make_SOCKS4(Socket server) throws IOException {
-        buffer = ByteBuffer.allocate(8);
-        buffer.put((byte)0x04).put((byte)0x01).putShort((short)81).putInt(2130706433);
+    public void make_SOCKS4(SocketChannel server) throws IOException {
+        buffer = ByteBuffer.allocate(1000);
+        buffer.put((byte)0x04).put((byte)0x01).putShort((short)81).putInt(2130706433).put(ID.getBytes());
         send_buffer(server);
 
         receive_buffer(server);
@@ -83,9 +92,10 @@ public class Client {
     public void run() {
         try {
             byte[] ip_v4 = ByteBuffer.allocate(4).putInt(ip).array();
-            Socket soc = new Socket(InetAddress.getByAddress(ip_v4), 20);
+            SocketChannel soc = SocketChannel.open(new InetSocketAddress(InetAddress.getByAddress(ip_v4), 20));
 
-            make_SOCKS5(soc);
+
+            make_SOCKS4(soc);
             //soc.close();
 
         } catch (IOException e) {

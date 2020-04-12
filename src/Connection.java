@@ -1,47 +1,33 @@
 import java.io.IOException;
 import java.net.*;
 import java.nio.ByteBuffer;
-import java.nio.channels.InterruptedByTimeoutException;
+import java.nio.channels.*;
 import java.util.Arrays;
+import java.util.Iterator;
+import java.util.Set;
 
 public class Connection implements Runnable, Task {
 
-    Socket client = null;
+    SocketChannel client;
     int packet_length;
-    Socket destination_Socket = null;
-    DatagramSocket client_U = null;
-    DatagramSocket destination_Socket_U = null;
+    SocketChannel destination_Socket;
     ByteBuffer buffer;
-    DatagramSocket client_UDP = null;
-    int timeout = 5000;
-    DatagramPacket datagramPacket;
-    String name;
+    Selector selector;
 
-    public Connection(Socket client_, String name_) {
-        name = name_;
+
+    public Connection(SocketChannel client_) {
+        buffer = ByteBuffer.allocate(4096);
         client = client_;
         try {
-            client.setSoTimeout(timeout);
-        } catch (SocketException e) {
-            System.out.println("error in protocol");
-            //e.printStackTrace();
+            client.configureBlocking(true);
+        } catch (IOException e) {
+            e.printStackTrace();
         }
     }
 
-    public Connection(Socket client_, int timeout_) {
-        timeout = timeout_;
-        client = client_;
-        try {
-            client.setSoTimeout(timeout);
-        } catch (SocketException e) {
-            System.out.println("error in protocol");
-            //e.printStackTrace();
-        }
-    }
 
     @Override
     public void run() {
-        buffer = ByteBuffer.allocate(1);
         try {
             try {
                 receive_buffer(client);
@@ -69,29 +55,21 @@ public class Connection implements Runnable, Task {
     @Override
     public void parse_request_SOCKS4() throws IOException, End {
 
-        buffer = ByteBuffer.allocate(1024);
-
-        try {
-            receive_buffer(client);
-        } catch (NoData| SocketTimeoutException noData) {
-            System.out.println("No getting data from first request by client");
-            shutdown_task();
-        }
-
         byte command = buffer.get();
         short port = buffer.getShort();
         byte []ip_v4 = new byte[4];
-        buffer.get(ip_v4,0,4);
-        byte []ID = new byte[packet_length - 7];
-        buffer.get(ID, 0, packet_length - 8);
+        buffer.get(ip_v4, 0, 4);
+        ByteBuffer sub = ByteBuffer.allocate(256);
+        byte b;
+        while((b = buffer.get()) != (byte)0x00) sub.put(b);
+        byte []ID = sub.array();
         if(ident_SOCKS4(ID)){
             connect_to_destinationServer_SOCKS4(ip_v4, port);
         }else{
-            buffer = ByteBuffer.allocate(8);
+            buffer.clear();
             buffer.put((byte)0x00).put((byte)0x5c);
-            send_buffer(client, 8);
+            send_buffer(client);
         }
-
     }
 
     @Override
@@ -99,42 +77,42 @@ public class Connection implements Runnable, Task {
         if(e instanceof SocketException){
             System.out.println("error when set up timeout");
             buffer.put((byte)0x5b);
-            send_buffer(client, 8);
+            send_buffer(client);
             shutdown_task();
             e.printStackTrace();
         }
         if(e instanceof SecurityException){
             System.out.println("Close connection by security method");
             buffer.put((byte)0x5b);
-            send_buffer(client, 8);
+            send_buffer(client);
             shutdown_task();
             e.printStackTrace();
         }
         if(e instanceof IllegalArgumentException){
             System.out.println("Port is illegal, should be between 0 and 65535");
             buffer.put((byte)0x5b);
-            send_buffer(client, 8);
+            send_buffer(client);
             shutdown_task();
             e.printStackTrace();
         }
         if(e instanceof NullPointerException){
             System.out.println("Address is null");
             buffer.put((byte)0x5b);
-            send_buffer(client, 8);
+            send_buffer(client);
             shutdown_task();
             e.printStackTrace();
         }
         if(e instanceof UnknownHostException){
             System.out.println("ip address or host could not be identify, illegal length of ip");
             buffer.put((byte)0x5b);
-            send_buffer(client, 8);
+            send_buffer(client);
             shutdown_task();
             e.printStackTrace();
         }
         if(e instanceof IOException ){
             System.out.println("IO exception with destination server socket");
             buffer.put((byte)0x5b);
-            send_buffer(client, 8);
+            send_buffer(client);
             shutdown_task();
             e.printStackTrace();
         }
@@ -142,23 +120,21 @@ public class Connection implements Runnable, Task {
 
     @Override
     public void connect_to_destinationServer_SOCKS4(byte[] ip_v4, short port) throws IOException, End {
-        buffer = ByteBuffer.allocate(8);
-        buffer.rewind();
+        buffer.clear();
         buffer.put((byte)0x00);
         try {
-            destination_Socket = new Socket(InetAddress.getByAddress(ip_v4), port);
-            destination_Socket.setSoTimeout(timeout);
+            destination_Socket = SocketChannel.open(new InetSocketAddress(InetAddress.getByAddress(ip_v4), port));
             buffer.put((byte)0x5a);
-            send_buffer(client, 8);
+            send_buffer(client);
         } catch(Exception ex){
             exceptionsSOCKS4(ex);
         }
 
-        buffer = ByteBuffer.allocate(4096);
+        shutdown_task();
         try {
-
+            streaming();
             shutdown_task();
-        } catch (IOException e) {
+        } catch (IOException | NoData e) {
             System.out.println("Connection reset");
             shutdown_task();
             e.printStackTrace();
@@ -170,65 +146,79 @@ public class Connection implements Runnable, Task {
         return request_to_BD(new String(id),null);
     }
 
-    @Override
-    public void receive_buffer(Socket socket) throws IOException, NoData, End {
+    public void receive_buffer(SocketChannel socket) throws SocketTimeoutException, IOException, NoData {
         //Если соединение есть, но данные не приходят будет брошено NoData
         //если с сокетом ассоциирован неблокирующий канал, то getinputstream кинет IllegalBlockingModeException.
         //если соединение было разорвано, то к потоку применяется:
         //1.Байты которые не были сброшены сетевым железом будут прочитаны
         //2.Если байтов больше нет то будет брошен IOException
         //3.Если байтов нет, а сокет не был закрыт то метод available вернет 0
-        try{
-            buffer.rewind();
-            packet_length = socket.getInputStream().read(buffer.array());
-            System.out.println("GET BYTES: " + packet_length);
-            if(packet_length<=0){
-                shutdown_task();
-                throw new NoData();
-            }
-            buffer.rewind();
-        }catch(SocketTimeoutException ex){
-            System.out.println("WOW: " + destination_Socket.getInputStream().read(buffer.array()));
-            System.out.println("WOW: " + client.getInputStream().read(buffer.array()));
-            shutdown_task();
-            ex.printStackTrace();
+        buffer.clear();
+        packet_length = socket.read(buffer);
+        if(packet_length<=0){
+            throw new NoData();
         }
+        System.out.println("GET BYTES: " + packet_length);
+        buffer.rewind();
+    }
 
+    public void send_buffer(SocketChannel socket) throws IOException, End {
+        buffer.flip();
+        System.out.println("SEND BYTES: " + socket.write(buffer));
     }
 
     @Override
-    public void send_buffer(Socket socket, int length) throws IOException, End {
-        try{
-            buffer.rewind();
-            System.out.println("SEND BYTES: " + length);
-            socket.getOutputStream().write(buffer.array(), 0, length);
-            socket.getOutputStream().flush();
-            buffer.rewind();
-        }catch(SocketTimeoutException ex){
-            shutdown_task();
-            ex.printStackTrace();
-        }
-    }
+    public void streaming() throws IOException, End, NoData {
 
-    @Override
-    public void streaming() throws IOException, NoData, End {
+        System.out.println("HERE");
+        selector = Selector.open();
 
-        while(client.isConnected() && destination_Socket.isConnected()){
-            try {
-                streaming();
-            } catch (NoData ignored){
+        client.configureBlocking(false);
+        destination_Socket.configureBlocking(false);
+
+        SelectionKey client_key = client.register(selector, SelectionKey.OP_WRITE);
+        SelectionKey client_key_1 = client.register(selector, SelectionKey.OP_READ);
+        SelectionKey server_key = destination_Socket.register(selector, SelectionKey.OP_READ);
+        SelectionKey server_key_1 = destination_Socket.register(selector,  SelectionKey.OP_WRITE);
+
+        //System.out.println("HERE");
+
+        ByteBuffer sub_buf = ByteBuffer.allocate(4096);
+
+
+        while(true){
+            System.out.println("HERE");
+            selector.select();
+
+            Set<SelectionKey> channels = selector.selectedKeys();
+            Iterator<SelectionKey> iterator = channels.iterator();
+
+            for (SelectionKey key : channels) {
+                if(key.isWritable()){
+                    if (key.channel() == client) {
+                        sub_buf.flip();
+                        System.out.println("SEND BYTES_C: " + client.write(sub_buf));
+                    } else {
+                        send_buffer(destination_Socket);
+                    }
+                }
+
+                if (key.isReadable()) {
+                    if (key.channel() == client) {
+                        receive_buffer(client);
+                    } else {
+                        sub_buf.clear();
+                        packet_length = destination_Socket.read(sub_buf);
+                        sub_buf.rewind();
+                    }
+                }
+
+
+                iterator.remove();
             }
 
+
         }
-
-        receive_buffer(client);
-
-        send_buffer(destination_Socket, packet_length);
-
-        receive_buffer(destination_Socket);
-
-        send_buffer(client, packet_length);
-
     }
 
     @Override
@@ -240,15 +230,15 @@ public class Connection implements Runnable, Task {
             switch (ip_type){
                 case 0x01:
                     buffer.put((byte)0x00).put(ip_type).put(ip_v4).putShort(port);
-                    send_buffer(client, 10);
+                    send_buffer(client);
                     break;
                 case 0x03:
                     buffer.put((byte)0x00).put(ip_type).put((byte)host.getBytes().length).put(host.getBytes()).putShort(port);
-                    send_buffer(client, 7+host.getBytes().length);
+                    send_buffer(client);
                     break;
                 case 0x04:
                     buffer.put((byte)0x00).put(ip_type).put(ip_v6).putShort(port);
-                    send_buffer(client, 22);
+                    send_buffer(client);
                     break;
                 default:
                     break;
@@ -262,15 +252,15 @@ public class Connection implements Runnable, Task {
             switch (ip_type){
                 case 0x01:
                     buffer.put((byte)0x00).put(ip_type).put(ip_v4).putShort(port);
-                    send_buffer(client, 10);
+                    send_buffer(client);
                     break;
                 case 0x03:
                     buffer.put((byte)0x00).put(ip_type).put((byte)host.getBytes().length).put(host.getBytes()).putShort(port);
-                    send_buffer(client, 7+host.getBytes().length);
+                    send_buffer(client);
                     break;
                 case 0x04:
                     buffer.put((byte)0x00).put(ip_type).put(ip_v6).putShort(port);
-                    send_buffer(client, 22);
+                    send_buffer(client);
                     break;
                 default:
                     break;
@@ -284,15 +274,15 @@ public class Connection implements Runnable, Task {
             switch (ip_type){
                 case 0x01:
                     buffer.put((byte)0x00).put(ip_type).put(ip_v4).putShort(port);
-                    send_buffer(client, 10);
+                    send_buffer(client);
                     break;
                 case 0x03:
                     buffer.put((byte)0x00).put(ip_type).put((byte)host.getBytes().length).put(host.getBytes()).putShort(port);
-                    send_buffer(client, 7+host.getBytes().length);
+                    send_buffer(client);
                     break;
                 case 0x04:
                     buffer.put((byte)0x00).put(ip_type).put(ip_v6).putShort(port);
-                    send_buffer(client, 22);
+                    send_buffer(client);
                     break;
                 default:
                     break;
@@ -306,15 +296,15 @@ public class Connection implements Runnable, Task {
             switch (ip_type){
                 case 0x01:
                     buffer.put((byte)0x00).put(ip_type).put(ip_v4).putShort(port);
-                    send_buffer(client, 10);
+                    send_buffer(client);
                     break;
                 case 0x03:
                     buffer.put((byte)0x00).put(ip_type).put((byte)host.getBytes().length).put(host.getBytes()).putShort(port);
-                    send_buffer(client, 7+host.getBytes().length);
+                    send_buffer(client);
                     break;
                 case 0x04:
                     buffer.put((byte)0x00).put(ip_type).put(ip_v6).putShort(port);
-                    send_buffer(client, 22);
+                    send_buffer(client);
                     break;
                 default:
                     break;
@@ -357,112 +347,36 @@ public class Connection implements Runnable, Task {
 
     }
 
-    public void connect_to_destinationServer_UDP(byte ip_type, byte[] ip_v4, byte[] ip_v6, String host, short port) throws IOException, End {
-
-        buffer = ByteBuffer.allocate(262);
-        buffer.rewind();
-        buffer.put((byte)0x05);
-        try {
-            switch (ip_type){
-                case 0x01:
-                    destination_Socket_U = new DatagramSocket(port, InetAddress.getByAddress(ip_v4));
-                    destination_Socket_U.setSoTimeout(timeout);
-                    buffer.put((byte)0x00).put(ip_type).put(ip_v4).putShort(port);
-                    send_buffer(client, 10);
-                    break;
-                case 0x03:
-                    destination_Socket_U = new DatagramSocket(port, InetAddress.getByName(host));
-                    destination_Socket_U.setSoTimeout(timeout);
-                    buffer.put((byte)0x00).put(ip_type).put((byte)host.getBytes().length).put(host.getBytes()).putShort(port);
-                    send_buffer(client, 7 + host.getBytes().length);
-                    break;
-                case 0x04:
-                    destination_Socket_U = new DatagramSocket(port, InetAddress.getByAddress(ip_v6));
-                    destination_Socket_U.setSoTimeout(timeout);
-                    buffer.put((byte)0x00).put(ip_type).put(ip_v6).putShort(port);
-                    send_buffer(client, 22);
-                    break;
-                default:
-                    shutdown_task();
-                    break;
-            }
-        } catch (Exception e){
-            //e.printStackTrace();
-        }
-
-        try {
-            client_U = new DatagramSocket();
-            client_U.bind(client.getLocalSocketAddress());
-        } catch (SocketException e) {
-            System.out.println("Can't bind");
-            e.printStackTrace();
-        }
-        buffer = ByteBuffer.allocate(4096);
-        datagramPacket = new DatagramPacket(buffer.array(),buffer.capacity());
-        while(true){
-            try {
-                streaming_UDP(client_U, destination_Socket_U);
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-        }
-    }
-
-    public void streaming_UDP(DatagramSocket client, DatagramSocket server) throws IOException {
-
-        client.receive(datagramPacket);
-        datagramPacket.setAddress(server.getInetAddress());
-        datagramPacket.setPort(server.getPort());
-        server.send(datagramPacket);
-
-        server.receive(datagramPacket);
-        datagramPacket.setAddress(client.getInetAddress());
-        datagramPacket.setPort(client.getPort());
-        client.send(datagramPacket);
-
-    }
-
     @Override
     public void parse_request_SOCKS5() throws IOException, End {
-        buffer = ByteBuffer.allocate(256);
-
-        try {
-            receive_buffer(client);
-        } catch (NoData | SocketTimeoutException noData) {
-            shutdown_task();
-            noData.printStackTrace();
-        }
 
         byte count_auth_methods = buffer.get();
         byte []auth_methods = new byte[count_auth_methods];
-        buffer.get(auth_methods,1,count_auth_methods-1);
+        buffer.get(auth_methods,0,count_auth_methods);
         byte picked_method = pick_auth_method_SOCKS5(auth_methods);
-        buffer = ByteBuffer.allocate(2);
+        buffer.clear();
         buffer.put((byte)0x05);
         buffer.put(picked_method);
-
-
-        send_buffer(client, 2);
+        send_buffer(client);
 
 
         //Mb will switch/case
         if(picked_method == 0x02){
-            buffer.rewind();
-            buffer.put((byte)0x01);
             if(!ident_SOCKS5(client)){
+                buffer.clear();
                 buffer.put((byte)0x01);
-                send_buffer(client, 2);
+                buffer.put((byte)0x01);
+                send_buffer(client);
                 shutdown_task();
             }
+            buffer.clear();
+            buffer.put((byte)0x01);
             buffer.put((byte)0x00);
-            send_buffer(client, 2);
+            send_buffer(client);
         }
 
 
         try{
-
-            buffer = ByteBuffer.allocate(262);
-
             try {
                 receive_buffer(client);
             } catch (NoData noData) {
@@ -516,38 +430,15 @@ public class Connection implements Runnable, Task {
                 break;
             case 0x03:
                 //установка UDP
-                switch (ip_type){
-                    case 0x01:
-                        byte[] ip_v4 = new byte[4];
-                        buffer.get(ip_v4, 0, 4);
-                        port = buffer.getShort();
-                        connect_to_destinationServer_UDP(ip_type,ip_v4,null, null, port);
-                        break;
-                    case 0x03:
-                        byte length = buffer.get();
-                        byte[] host = new byte[length];
-                        buffer.get(host,0, length);
-                        port = buffer.getShort();
-                        connect_to_destinationServer_UDP(ip_type,null,null, new String(host), port);
-                        break;
-                    case 0x04:
-                        byte []ip_v6 = new byte[16];
-                        buffer.get(ip_v6,0,16);
-                        port = buffer.getShort();
-                        connect_to_destinationServer_UDP(ip_type,null,ip_v6,null, port);
-                        break;
-                    default:
-                        throw new ProtocolException();
-                }
-                break;
             default:
                 throw new ProtocolException();
             }
         }catch(ProtocolException ex){
             System.out.println("wrong command or protocol error");
             buffer.put(1,(byte)0x07);
-            send_buffer(client, packet_length);
+            send_buffer(client);
             shutdown_task();
+            ex.printStackTrace();
         }catch (Exception ex){
             exceptionsSOCKS5(ex, (byte)0x00, null, null, null, (short)0);
         }
@@ -555,12 +446,11 @@ public class Connection implements Runnable, Task {
 
     @Override
     public boolean request_to_BD(String ID, String PW){
+        System.out.println("Connect!");
         return true;
     }
 
-    @Override
-    public boolean ident_SOCKS5(Socket client) throws IOException, End {
-        buffer = ByteBuffer.allocate(515);
+    public boolean ident_SOCKS5(SocketChannel client) throws IOException, End {
 
         try {
             receive_buffer(client);
@@ -582,43 +472,38 @@ public class Connection implements Runnable, Task {
 
     @Override
     public void connect_to_destinationServer_SOCKS5(byte ip_type, byte[] ip_v4, byte[] ip_v6, String host, short port) throws ProtocolException, IOException, End {
-        buffer = ByteBuffer.allocate(262);
-        buffer.rewind();
+        buffer.clear();
         buffer.put((byte)0x05);
 
         switch (ip_type){
             case 0x01:
-                destination_Socket = new Socket(InetAddress.getByAddress(ip_v4), port);
-                destination_Socket.setSoTimeout(timeout);
+                System.out.println("HERE3: " + port + " : " + InetAddress.getByAddress(ip_v4).getHostAddress());
+                destination_Socket = SocketChannel.open(new InetSocketAddress(InetAddress.getByAddress(ip_v4), port));
+                System.out.println("HERE4");
                 buffer.put((byte)0x00).put((byte)0x00).put(ip_type).put(ip_v4).putShort(port);
-                send_buffer(client, 10);
+                System.out.println("HERE5");
+                send_buffer(client);
                 break;
             case 0x03:
-                destination_Socket = new Socket(host, port);
-                destination_Socket.setSoTimeout(timeout);
+                destination_Socket = SocketChannel.open(new InetSocketAddress(InetAddress.getByName(host), port));
                 buffer.put((byte)0x00).put((byte)0x00).put(ip_type).put((byte)host.getBytes().length).put(host.getBytes()).putShort(port);
-                send_buffer(client, 7+host.getBytes().length);
+                send_buffer(client);
                 break;
             case 0x04:
-                destination_Socket = new Socket(InetAddress.getByAddress(ip_v6), port);
-                destination_Socket.setSoTimeout(timeout);
+                destination_Socket = SocketChannel.open(new InetSocketAddress(InetAddress.getByAddress(ip_v6), port));
                 buffer.put((byte)0x00).put((byte)0x00).put(ip_type).put(ip_v6).putShort(port);
-                send_buffer(client, 22);
+                send_buffer(client);
                 break;
             default:
-                shutdown_task();
+                System.out.println("Here!");
+                //shutdown_task();
                 break;
         }
-
-        buffer = ByteBuffer.allocate(4096);
+        System.out.println("HERE1");
         try {
-            while(client.isConnected() && destination_Socket.isConnected()){
-                try {
-                    streaming();
-                } catch (NoData ignored){}
-            }
-            shutdown_task();
-        } catch (IOException e) {
+            streaming();
+            System.out.println("HERE2");
+        } catch (IOException | NoData e) {
             System.out.println("Connection reset");
             e.printStackTrace();
             shutdown_task();
@@ -629,6 +514,7 @@ public class Connection implements Runnable, Task {
     @Override
     public byte pick_auth_method_SOCKS5(byte[] methods){
         for (byte method : methods) {
+            System.out.println("MET: " + method);
             if (method == 0x02) return method;
         }
         return 0x00;
@@ -638,19 +524,15 @@ public class Connection implements Runnable, Task {
     public void shutdown_task() throws IOException, End {
 
         if(destination_Socket!=null){
-            destination_Socket.shutdownOutput();
             destination_Socket.shutdownInput();
-            destination_Socket.close();
+            destination_Socket.shutdownOutput();
+            destination_Socket.socket().close();
         }
-        if(destination_Socket_U!=null){
-            destination_Socket_U.close();
-        }
-        if(client_U!=null){
-            client_U.close();
-        }
-        client.shutdownOutput();
+
         client.shutdownInput();
-        client.close();
+        client.shutdownOutput();
+        client.socket().close();
+
         throw new End();
     }
 

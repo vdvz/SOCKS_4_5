@@ -11,15 +11,9 @@ public interface Task {
 
     boolean request_to_BD(String ID, String PW);
 
-    boolean ident_SOCKS5(Socket client) throws IOException, End;
-
     void connect_to_destinationServer_SOCKS5(byte ip_type, byte[] ip_v4, byte[] ip_v6, String host, short port) throws IOException, End;
 
     boolean ident_SOCKS4(byte[] id);
-
-    void receive_buffer(Socket socket) throws IOException, NoData, End;
-
-    void send_buffer(Socket socket, int length) throws IOException, End;
 
     void streaming() throws IOException, NoData, End;
 

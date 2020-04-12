@@ -21,7 +21,6 @@ public class DestinationServer implements Runnable {
         buffer.rewind();
         int i = 0;
         try {
-            socket.setSoTimeout(1000);
             i = socket.getInputStream().read(buffer.array());
             if(i<=0) throw new NoData();
         } catch (SocketTimeoutException e) {
