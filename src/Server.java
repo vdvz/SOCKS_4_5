@@ -8,7 +8,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 public class Server implements Server_I{
     int MAX_CONNECTIONS = 1;
     String HOST = "localhost";
-    int PORT = 80;
+    int PORT = 20;
     ThreadPoolExecutor threadPoolExecutor;
     ThreadFactory socketFactory;
     ServerSocket serverSocket;
@@ -74,7 +74,7 @@ public class Server implements Server_I{
     public void start() throws IOException {
         while(isOn) {
             Socket client = serverSocket.accept();
-            threadPoolExecutor.submit(new Connection(client));
+            threadPoolExecutor.submit(new Connection(client, "1"));
         }
     }
 
