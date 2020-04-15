@@ -1,3 +1,6 @@
+import Exceptions.End;
+import Exceptions.NoData;
+
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.Socket;
@@ -89,14 +92,14 @@ public class SubTest {
             }
             shutdown_task();
         } catch (IOException e) {
-            System.out.println("Connection reset");
+            System.out.println("Server.Connection reset");
             shutdown_task();
             e.printStackTrace();
         }
     }
 
     public void receive_buffer(Socket socket) throws IOException, NoData {
-        //Если соединение есть, но данные не приходят будет брошено NoData
+        //Если соединение есть, но данные не приходят будет брошено Exceptions.NoData
         //если с сокетом ассоциирован неблокирующий канал, то getinputstream кинет IllegalBlockingModeException.
         //если соединение было разорвано, то к потоку применяется:
         //1.Байты которые не были сброшены сетевым железом будут прочитаны

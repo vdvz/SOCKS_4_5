@@ -1,17 +1,17 @@
+package Client;
+
 import java.io.IOException;
-import java.net.InetAddress;
-import java.net.InetSocketAddress;
-import java.net.Socket;
-import java.net.SocketAddress;
+import java.net.*;
 import java.nio.ByteBuffer;
 import java.nio.channels.SocketChannel;
 
-public class Client {
+public class Client implements Runnable {
 
     final byte version = 0x04;
     final byte command = 0x01;
     final int port_number = 80;
     Integer ip = 2130706433;//127.0.0.1
+    String ip_tg = "[l8�";
 
     ByteBuffer buffer;
     String ID = "vizir";
@@ -58,13 +58,17 @@ public class Client {
         System.out.println("Is available: " + buffer.get());
 
         buffer = ByteBuffer.allocate(4096);
-        buffer.rewind();
+
         System.out.println("Send to destination server: " + 3);
         buffer.putInt(3);
         send_buffer(server);
-        buffer.rewind();
+
         receive_buffer(server);
         System.out.println("get from destination server: " + buffer.getInt());
+
+        while(true){
+
+        }
 
 
     }
@@ -90,16 +94,23 @@ public class Client {
     }
 
     public void run() {
+        System.out.println("HERE");
         try {
             byte[] ip_v4 = ByteBuffer.allocate(4).putInt(ip).array();
+            ByteBuffer tg = ByteBuffer.allocate(4).put(new Integer(149).byteValue()).put(new Integer(154).byteValue()).put(new Integer(167).byteValue()).put(new Integer(51).byteValue());
             SocketChannel soc = SocketChannel.open(new InetSocketAddress(InetAddress.getByAddress(ip_v4), 20));
 
+            make_SOCKS5(soc);
 
-            make_SOCKS4(soc);
+            soc.shutdownOutput();
+            soc.shutdownInput();
+            soc.finishConnect();
             //soc.close();
 
         } catch (IOException e) {
             e.printStackTrace();
+        }catch (Exception e){
+
         }
 
     }

@@ -1,3 +1,5 @@
+package DestinationServer;
+
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -9,7 +11,7 @@ public class Test_Server implements Runnable {
 
     @Override
     public void run() {
-        ThreadPoolExecutor threadPoolExecutor = (ThreadPoolExecutor) Executors.newFixedThreadPool(2);
+        ThreadPoolExecutor threadPoolExecutor = (ThreadPoolExecutor) Executors.newFixedThreadPool(1);
         try {
             ServerSocket serverSocket = new ServerSocket(DESTINATION_PORT);
             while(true){

@@ -1,7 +1,7 @@
+package Server;
+
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.net.ServerSocket;
-import java.net.Socket;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
 import java.util.concurrent.Executors;
@@ -9,7 +9,7 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 
 public class Server implements Server_I{
-    int MAX_CONNECTIONS = 1;
+    int MAX_CONNECTIONS = 10;
     String HOST = "localhost";
     int PORT = 20;
     ThreadPoolExecutor threadPoolExecutor;
@@ -19,9 +19,10 @@ public class Server implements Server_I{
 
 
     Server(){
+        setThreadPoolExecutor((ThreadPoolExecutor) Executors.newFixedThreadPool(MAX_CONNECTIONS));
     }
 
-    Server(int port, int max_connections){
+    public Server(int port, int max_connections){
         PORT = port;
         MAX_CONNECTIONS = max_connections;
         setThreadPoolExecutor((ThreadPoolExecutor) Executors.newFixedThreadPool(MAX_CONNECTIONS));
@@ -71,21 +72,28 @@ public class Server implements Server_I{
     @Override
     public void configurate() throws IOException {
         serverSocket = ServerSocketChannel.open();
-        serverSocket.bind(new InetSocketAddress("localhost", PORT));
+        serverSocket.bind(new InetSocketAddress(HOST, PORT));
+    }
+
+    @Override
+    public void turn_off_server(){
+        isOn = false;
     }
 
     @Override
     public void start() throws IOException {
         while(isOn) {
             SocketChannel client = serverSocket.accept();
-            threadPoolExecutor.submit(new Connection(client));
+            threadPoolExecutor.execute(new Connection(client));
         }
+        shutdown();
     }
 
     @Override
     public void shutdown() {
         isOn = false;
         threadPoolExecutor.shutdownNow();
+        BD.getInstance().clear();
     }
 
 }

@@ -1,3 +1,5 @@
+package Server;
+
 import java.io.IOException;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -5,6 +7,8 @@ import java.util.concurrent.ThreadPoolExecutor;
 public interface Server_I {
 
     void configurate() throws IOException;
+
+    void turn_off_server();
 
     void start() throws IOException;
 
