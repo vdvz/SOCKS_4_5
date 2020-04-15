@@ -5,6 +5,8 @@ import Exceptions.NoData;
 
 import java.io.IOException;
 import java.net.*;
+import java.nio.Buffer;
+import java.nio.BufferOverflowException;
 import java.nio.ByteBuffer;
 import java.nio.channels.*;
 import java.util.Iterator;
@@ -50,7 +52,6 @@ public class Connection implements Runnable, Task {
                 default:
                     break;
             }
-
         }catch (End e){
             e.printStackTrace();
         }
@@ -173,40 +174,40 @@ public class Connection implements Runnable, Task {
                 if(key.isReadable()){
                     if (key.channel() == client) {
                         try {
-
-                            if (!(client.read(buffer)>0)) break;
-
+                            while(client.read(buffer)!=0) {
+                                if(!buffer.hasRemaining()){
+                                    buffer.flip();
+                                    destination_Socket.write(buffer);
+                                    buffer.clear();
+                                }
+                            }
+                            if(buffer.position()!=0){
+                                buffer.flip();
+                                destination_Socket.write(buffer);
+                                buffer.clear();
+                            }
                         } catch (IOException e) {
                             shutdown_task();
                             e.printStackTrace();
                         }
-                        System.out.println("READ CLIENT: " + buffer.position());
-
-                        buffer.flip();
-                        try {
-                            System.out.println("SEND SERVER: " + destination_Socket.write(buffer));
-                        } catch (Exception e) {
-                            shutdown_task();
-                            e.printStackTrace();
-                        }
-                        buffer.clear();
                     } else {
                         try {
-                            if (!(destination_Socket.read(buffer)>0)) break;
+                            while(destination_Socket.read(buffer)!=0) {
+                                if(!buffer.hasRemaining()){
+                                    buffer.flip();
+                                    client.write(buffer);
+                                    buffer.clear();
+                                }
+                            }
+                            if(buffer.position()!=0) {
+                                buffer.flip();
+                                client.write(buffer);
+                                buffer.clear();
+                            }
                         } catch (IOException e) {
                             shutdown_task();
                             e.printStackTrace();
                         }
-                        System.out.println("READ SERVER: " + buffer.position());
-
-                        buffer.flip();
-                        try {
-                            System.out.println("SEND CLIENT: " + client.write(buffer));
-                        } catch (Exception e) {
-                            shutdown_task();
-                            e.printStackTrace();
-                        }
-                        buffer.clear();
                     }
                 }
 
@@ -326,10 +327,8 @@ public class Connection implements Runnable, Task {
         byte []PW = new byte[pw_length];
         buffer.get(PW, 0, pw_length);
 
-        //System.out.println("ID: " + new String(ID) + " PW: " + new String(PW));
 
         return request_to_BD(new String(ID).trim(), new String(PW).trim());
-
     }
 
     @Override
