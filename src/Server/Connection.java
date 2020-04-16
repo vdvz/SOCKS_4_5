@@ -21,7 +21,7 @@ public class Connection implements Runnable, Task {
     //sending buffer
     ByteBuffer buffer;
     //timeout for selector
-    long timeout = 10000;
+    long timeout = 60000;
     Selector selector;
 
 
@@ -116,7 +116,11 @@ public class Connection implements Runnable, Task {
         if(packet_length<=0){
             throw new NoData();
         }
-        } catch (IOException | NoData e) {
+        } catch (IOException e) {
+            shutdown_task();
+            e.printStackTrace();
+        }
+        catch(NoData e){
             shutdown_task();
             e.printStackTrace();
         }
@@ -154,7 +158,9 @@ public class Connection implements Runnable, Task {
         }
 
         buffer.clear();
-
+        ByteBuffer buffer_server = ByteBuffer.allocate(4096);
+        buffer_server.clear();
+        System.out.println("HERE");
         while(true){
             try {
                 //set up timeout if server or client dont answer in timeout then generate exception and thread interupt
@@ -164,24 +170,27 @@ public class Connection implements Runnable, Task {
                 e.printStackTrace();
             }
 
+
             Set<SelectionKey> channels = selector.selectedKeys();
+            //System.out.println("here");
+            if(channels.size()==0) shutdown_task();
             Iterator<SelectionKey> iterator = channels.iterator();
 
             while(iterator.hasNext()){
-
                 SelectionKey key = iterator.next();
 
                 if(key.isReadable()){
                     if (key.channel() == client) {
                         try {
-                            while(client.read(buffer)!=0) {
+                            while(client.read(buffer)>0) {
+                                //System.out.println("From client" + buffer.position());
                                 if(!buffer.hasRemaining()){
                                     buffer.flip();
-                                    destination_Socket.write(buffer);
+                                    System.out.println("Here to server: " + destination_Socket.write(buffer));
                                     buffer.clear();
                                 }
                             }
-                            if(buffer.position()!=0){
+                            if(buffer.remaining()!=buffer.capacity()){
                                 buffer.flip();
                                 destination_Socket.write(buffer);
                                 buffer.clear();
@@ -190,19 +199,21 @@ public class Connection implements Runnable, Task {
                             shutdown_task();
                             e.printStackTrace();
                         }
-                    } else {
+                    }
+                    if (key.channel() == destination_Socket) {
                         try {
-                            while(destination_Socket.read(buffer)!=0) {
-                                if(!buffer.hasRemaining()){
-                                    buffer.flip();
-                                    client.write(buffer);
-                                    buffer.clear();
+                            while(destination_Socket.read(buffer_server)>0) {
+                                //System.out.println("From server: " + buffer_server.position());
+                                if(!buffer_server.hasRemaining()){
+                                    buffer_server.flip();
+                                    System.out.println("Here to client: " + client.write(buffer_server));
+                                    buffer_server.clear();
                                 }
                             }
-                            if(buffer.position()!=0) {
-                                buffer.flip();
-                                client.write(buffer);
-                                buffer.clear();
+                            if(buffer_server.remaining()!=buffer_server.capacity()) {
+                                buffer_server.flip();
+                                client.write(buffer_server);
+                                buffer_server.clear();
                             }
                         } catch (IOException e) {
                             shutdown_task();
@@ -402,7 +413,7 @@ public class Connection implements Runnable, Task {
             e.printStackTrace();
             shutdown_task();
         }*/
-        catch(IOException e) {
+        catch(Exception e) {
             switch (ip_type) {
                 case 0x01:
                     buffer.put((byte) 0x05).put((byte) 0x00).put(ip_type).put(ip_v4).putShort(port);
@@ -424,10 +435,8 @@ public class Connection implements Runnable, Task {
             e.printStackTrace();
 
         }
-        catch(Exception e){
-            shutdown_task();
-            e.printStackTrace();
-        }
+
+        System.out.println("Steaminig");
 
         streaming();
 
