@@ -21,11 +21,7 @@ public class ThreadPool{
     MySelector selector;
 
     ThreadPool(){
-        selector = new MySelector();
-        pool.put(selector, 0);
-        Thread thread = new Thread(selector);
-        thread.start();
-        threads.add(thread);
+        selector = create_new_MySelector();
     }
 
     public synchronized MySelector register(ServerSocketChannel registered, int key, Object attachment){
@@ -35,31 +31,33 @@ public class ThreadPool{
         return selector;
     }
 
+    public MySelector create_new_MySelector(){
+        MySelector selector = new MySelector();
+        pool.put(selector, 0);
+        Thread thread = new Thread(selector);
+        thread.start();
+        threads.add(thread);
+        return selector;
+
+    }
+
     //Регистрируем новый канал в селекторе
-    public synchronized SelectionKey register(SocketChannel registered, int key, Object attachment){
+    public synchronized MySelector register(SocketChannel registered, int key, Object attachment){
         MySelector selector = getMinValueThread();
         pool.replace(selector, pool.get(selector)+1);
-        return selector.register(registered, key, attachment);
-    }
-
-    public synchronized void setLock(MySelector selector){
-        selector.setLock();
-    }
-
-    public synchronized void setUnlock(MySelector selector){
-        selector.setUnlock();
+        selector.register(registered, key, attachment);
+        return selector;
     }
 
     //Уменьшает количество обрабатываемых сокетов на 1
-    public synchronized void unregister(MySelector selector){
-        pool.replace(selector, pool.get(selector)-1);
-    }
-
+    public synchronized void unregister(MySelector selector){pool.replace(selector, pool.get(selector)-1);}
 
     //Возвращает самый незагруженный поток
     public MySelector getMinValueThread(){
-        System.out.println("POOL SIZE: " + pool.get(selector));
-        return selector;
+        for(Map.Entry<MySelector, Integer> entry: pool.entrySet()){
+            if(entry.getValue()<MAX_SOCKET_PER_SELECTOR) return entry.getKey();
+        }
+        return create_new_MySelector();
     }
 
     public void shutdown(){

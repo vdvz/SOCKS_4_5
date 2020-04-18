@@ -24,7 +24,7 @@ public class Server implements Server_I{
         setThreadPoolExecutor((ThreadPoolExecutor) Executors.newFixedThreadPool(MAX_CONNECTIONS));
     }
 
-    static Server instance = new Server(20, 1);
+    static Server instance = new Server(20, 10000);
 
     public static Server getInstance(){
         return instance;
@@ -91,18 +91,18 @@ public class Server implements Server_I{
 
     @Override
     public void start() throws IOException {
-        int i = 0;
         //threadPoolExecutor.setKeepAliveTime(2000, TimeUnit.MILLISECONDS);
         while(isOn){
-            if(threadPoolExecutor.getQueue().size()>10){
+            if(threadPoolExecutor.getQueue().size()>1){
                 threadPoolExecutor.getQueue().forEach(k->threadPoolExecutor.remove(k));
             }
             SocketChannel socket = serverSocket.accept();
+            if(threadPoolExecutor.getPoolSize() == threadPoolExecutor.getMaximumPoolSize()) continue;
             socket.socket().setKeepAlive(true);
-            threadPoolExecutor.execute(new Task(socket,++i));
-            System.out.println("PoolSize: " + threadPoolExecutor.getPoolSize());
-            System.out.println("Active: " + threadPoolExecutor.getActiveCount());
-            System.out.println("Queue: " + threadPoolExecutor.getQueue().size());
+            threadPoolExecutor.execute(new Task(socket));
+            //System.out.println("PoolSize: " + threadPoolExecutor.getPoolSize());
+            //System.out.println("Active: " + threadPoolExecutor.getActiveCount());
+            //System.out.println("Queue: " + threadPoolExecutor.getQueue().size());
 
         }
         //serverSocket.configureBlocking(false);

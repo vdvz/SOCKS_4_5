@@ -13,7 +13,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 
 public class MySelector implements Runnable{
 
-    private boolean isLock = false;
+    private volatile boolean isLock = false;
     private boolean isOn = true;
     private Selector selector;
     private ByteBuffer buffer;
@@ -70,10 +70,10 @@ public class MySelector implements Runnable{
     public void run() {
         try {
             while(isOn){
+                //System.out.println("Lock: " + isLock);
                 if(!isLock) {
-
                     selector.select();
-
+                    //System.out.println("select size: " + selector.select());
                     Set<SelectionKey> channels = selector.selectedKeys();
                     Iterator<SelectionKey> iterator = channels.iterator();
                     while (iterator.hasNext()) {
@@ -84,14 +84,12 @@ public class MySelector implements Runnable{
                                 SocketChannel to = pair.getValue();
                                 SocketChannel from = (SocketChannel) key.channel();
                                 Socks_I socks_task = pair.getKey();
-                                socks_task.setValidFLag(from);
                                 try {
-                                    Readable(from, to);
-                                } catch (Exception ex) {
-                                    System.out.println("set exception dlag ");
+                                    Readable(from, to, socks_task);
+                                } catch (IOException ex) {
                                     key.cancel();
-                                    socks_task.setCloseFLag(from);
-                                    //socks_task.setClose();
+                                    socks_task.setCloseFLag();
+                                    //ex.printStackTrace();
                                 }
                             }
                         }
@@ -115,38 +113,40 @@ public class MySelector implements Runnable{
         }
     }
 
-    public void Readable(SocketChannel in, SocketChannel out) throws Exception {
-        int k;
-        while((k = in.read(buffer))>0) {
-            System.out.println("K: " + k);
-            if(!buffer.hasRemaining()){
-                buffer.flip();
-                out.write(buffer);
-                buffer.clear();
+    public void Readable(SocketChannel in, SocketChannel out, Socks_I socks_task) throws IOException {
+        int send = -1;
+        try {
+            while(in.read(buffer)>0){
+                if(!buffer.hasRemaining()){
+                    buffer.flip();
+                    send+=out.write(buffer);
+                    buffer.clear();
+                }
             }
-        }
-        System.out.println("K: " + k);
-        if(buffer.position()!=0){
-            buffer.flip();
-            out.write(buffer);
-            buffer.clear();
-        }
-        if(k == -1){
             if(buffer.position()!=0){
                 buffer.flip();
-                out.write(buffer);
+                send+=out.write(buffer);
                 buffer.clear();
             }
-            throw new End("End");
+        } catch (IOException e) {
+            in.socket().close();
+            out.socket().close();
+            throw new IOException();
         }
+        if(send != -1){
+            socks_task.setValidFLag();
+        }
+        //System.out.println("Send: " + send + " Thread: " + socks_task.getThread().getName());
+
     }
+
 
     public void Connectable(){
     }
 
     public void Acceptable(ThreadPoolExecutor threadPoolExecutor, ServerSocketChannel socket) throws IOException {
         System.out.println("accept now");
-        threadPoolExecutor.execute(new Task(socket.accept(), 0));
+        threadPoolExecutor.execute(new Task(socket.accept()));
     }
 
     public void shutdown(){

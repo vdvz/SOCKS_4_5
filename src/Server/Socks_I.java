@@ -9,11 +9,13 @@ import java.nio.channels.SocketChannel;
 
 public interface Socks_I {
 
+    Thread getThread();
+
     void parse() throws End;
 
-    void setCloseFLag(SocketChannel channel);
+    void setCloseFLag();
 
-    void setValidFLag(SocketChannel channel);
+    void setValidFLag();
 
     void connect(byte ip_type, byte[] ip_v4, byte[] ip_v6, String host, short port) throws End;
 

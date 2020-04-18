@@ -15,26 +15,29 @@ import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
 public class Socks5 implements Socks_I{
-    private SelectionKey client_selector = null;
-    private SelectionKey server_selector = null;
+    Thread thread = Thread.currentThread();
+    int timeout = 100000;
+    private MySelector client_selector = null;
+    private MySelector server_selector = null;
     private SocketChannel client;
     private SocketChannel server = null;
     private ByteBuffer buffer;
     private volatile boolean isClose = false;
-    private volatile boolean isValid = false;
-    private volatile boolean isServerClose = false;
-    int num;
 
 
     ReentrantLock lock = new ReentrantLock();
     Condition condition = lock.newCondition();
 
-    public Socks5(SocketChannel client_, ByteBuffer buffer_, int num_){
-        num = num_;
+    public Socks5(SocketChannel client_, ByteBuffer buffer_){
         client = client_;
         buffer = buffer_;
     }
 
+
+    @Override
+    public Thread getThread() {
+        return thread;
+    }
 
     @Override
     public void parse() throws End {
@@ -118,23 +121,30 @@ public class Socks5 implements Socks_I{
 
 
     @Override
-    public void setCloseFLag(SocketChannel channel){
+    public void setCloseFLag() {
         lock.lock();
-            //Уменьшает количество обрабатываемых селектором ключей в map в ThreadPool
-        if(!isClose){
-            isClose = true;
-            condition.signal();
+        try {
+            if(!isClose) {
+                isClose = true;
+                condition.signal();
+                System.out.println("EXCEPTION IS SET: " + getThread().getName());
+            }
+        }finally{
+            lock.unlock();
         }
-        lock.unlock();
     }
+
+
 
     @Override
-    public void setValidFLag(SocketChannel channel){
+    public void setValidFLag(){
         lock.lock();
-        isValid = true;
-        lock.unlock();
+        try {
+            condition.signal();
+        }finally {
+            lock.unlock();
+        }
     }
-
 
     @Override
     public void connect(byte ip_type, byte[] ip_v4, byte[] ip_v6, String host, short port) throws End {
@@ -197,7 +207,8 @@ public class Socks5 implements Socks_I{
             shutdown();
         }
 
-        System.out.println("Streaminig");
+
+        System.out.println("Streaminig: " + Thread.currentThread().getName());
 
         try{
             client.configureBlocking(false);
@@ -215,21 +226,18 @@ public class Socks5 implements Socks_I{
         try{
             while(!isClose){
                 try {
-                    if(condition.await(10000, TimeUnit.MILLISECONDS)) {
-                        close_sockets();
-                        System.out.println("num: " + num);
-                    }else if(!isValid){
-                        System.out.println("stop");
-                        isClose = true;
-                        close_sockets();
-                    }else isValid = false;
+                    if(!condition.await(timeout,TimeUnit.MILLISECONDS)) isClose = true;
                 } catch (InterruptedException e) {
                     e.printStackTrace();
                 }
             }
+            System.out.println("Start exit: " + getThread().getName());
         }finally {
             lock.unlock();
         }
+        System.out.println("Procced to close connect: " + getThread().getName());
+        close_sockets();
+
     }
 
     @Override
@@ -275,7 +283,11 @@ public class Socks5 implements Socks_I{
 
     @Override
     public void close_sockets(){
+        System.out.println("CLose socket: " + getThread().getName());
         try {
+            if(server_selector!=null)Server.getInstance().getSelectorsPool().unregister(server_selector);
+            if(client_selector!=null)Server.getInstance().getSelectorsPool().unregister(client_selector);
+
             if(!client.socket().isClosed()) client.socket().close();
             if(server!=null) if(!server.socket().isClosed()) server.socket().close();
         } catch (Exception e) {

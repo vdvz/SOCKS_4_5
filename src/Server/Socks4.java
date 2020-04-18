@@ -10,6 +10,7 @@ import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.SocketChannel;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -17,9 +18,11 @@ public class Socks4 implements Socks_I {
 
     private SocketChannel client;
     private SocketChannel server;
-    private ByteBuffer buffer;
     private MySelector client_selector = null;
     private MySelector server_selector = null;
+    Thread thread = Thread.currentThread();
+    private volatile boolean isValid = false;
+    private ByteBuffer buffer;
     private boolean isClose = false;
     ReentrantLock lock = new ReentrantLock();
     Condition condition = lock.newCondition();
@@ -29,6 +32,11 @@ public class Socks4 implements Socks_I {
         buffer = buffer_;
     }
 
+
+    @Override
+    public Thread getThread() {
+        return thread;
+    }
 
     @Override
     public void parse() throws End {
@@ -77,39 +85,52 @@ public class Socks4 implements Socks_I {
             e.printStackTrace();
         }
 
-        //server_selector = Server.getInstance().getSelectorsPool().register(server, SelectionKey.OP_READ, new Pair<>(this, client));
-        //client_selector = Server.getInstance().getSelectorsPool().register(client, SelectionKey.OP_READ, new Pair<>(this, server));
+        server_selector = Server.getInstance().getSelectorsPool().register(server, SelectionKey.OP_READ, new Pair<>(this, client));
+        client_selector = Server.getInstance().getSelectorsPool().register(client, SelectionKey.OP_READ, new Pair<>(this, server));
 
         lock.lock();
         try{
             while(!isClose){
                 try {
-                    condition.await();
-                    close_sockets();
+                    if(condition.await(100000, TimeUnit.MILLISECONDS)){
+                        isValid = false;
+                    } else isClose = true;
                 } catch (InterruptedException e) {
                     e.printStackTrace();
                 }
             }
+            System.out.println("Start exit: " + getThread().getName());
         }finally {
             lock.unlock();
         }
+        System.out.println("Procced to close connect: " + getThread().getName());
+        close_sockets();
 
     }
 
     @Override
-    public void setCloseFLag(SocketChannel channel){
+    public void setCloseFLag(){
         lock.lock();
-        //Уменьшает количество обрабатываемых селектором ключей в map в ThreadPool
-        if(server_selector!=null) Server.getInstance().getSelectorsPool().unregister(server_selector);
-        if(client_selector!=null) Server.getInstance().getSelectorsPool().unregister(client_selector);
-        isClose = true;
-        condition.signal();
-        lock.unlock();
+        try {
+            if(!isClose) {
+                isClose = true;
+                condition.signal();
+                System.out.println("EXCEPTION IS SET: " + getThread().getName());
+            }
+        }finally{
+            lock.unlock();
+        }
     }
 
     @Override
-    public void setValidFLag(SocketChannel channel) {
-
+    public void setValidFLag() {
+        lock.lock();
+        try {
+            isValid = true;
+            condition.signal();
+        }finally {
+            lock.unlock();
+        }
     }
 
     @Override
@@ -121,8 +142,7 @@ public class Socks4 implements Socks_I {
     public void receive(SocketChannel from) throws End {
         buffer.clear();
         try{
-            int packet_length;
-            if((packet_length = from.read(buffer))<0){
+            if(from.read(buffer)<0){
                 shutdown();
             }
         } catch (IOException e) {

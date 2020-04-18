@@ -14,11 +14,8 @@ public class Task implements Runnable, Task_I {
 
     private SocketChannel client;
     private ByteBuffer buffer;
-    int num;
 
-    public Task(SocketChannel client_, int num_) {
-        num = num_;
-        System.out.println("NUM:" + num);
+    public Task(SocketChannel client_) {
         buffer = ByteBuffer.allocate(4096);
         client = client_;
         try {
@@ -30,7 +27,6 @@ public class Task implements Runnable, Task_I {
 
     @Override
     public void run() {
-        System.out.println("Hi");
         try {
             receive(client);
         } catch (End e){
@@ -41,10 +37,10 @@ public class Task implements Runnable, Task_I {
             switch (buffer.get()) {
                 case 0x04:
                     new Socks4(client, buffer).parse();
-                    System.out.println("Bye");
+                    System.out.println("Bye\nClose without errors");
                     break;
                 case 0x05:
-                    new Socks5(client, buffer, num).parse();
+                    new Socks5(client, buffer).parse();
                     System.out.println("Bye");
                     break;
                 default:
@@ -52,8 +48,7 @@ public class Task implements Runnable, Task_I {
                     break;
             }
         }catch(End e){
-            System.out.println("Bye");
-            System.out.println("interrupt by end, cause is in Socks-class");
+            System.out.println("Bye\nInterrupt by end, cause is in Socks-class");
             e.printStackTrace();
         }
     }
@@ -63,21 +58,18 @@ public class Task implements Runnable, Task_I {
     public void receive(SocketChannel from) throws End {
         buffer.clear();
         try{
-            int packet_length;
-            if((packet_length = from.read(buffer))<0){
+            if(from.read(buffer)<0){
                 throw new End();
             }
         } catch (IOException e) {
             throw new End();
         }
-        //System.out.println("GET BYTES: " + packet_length);
         buffer.rewind();
     }
 
     @Override
     public void shutdown_task(){
-        System.out.println("interrupt by shutdown, cause in Task-class");
-        System.out.println("Bye");
+        System.out.println("Bye\ninterrupt by shutdown, cause in Task-class");
         try {
             client.socket().close();
         } catch (IOException e) {
