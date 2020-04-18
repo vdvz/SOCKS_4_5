@@ -13,13 +13,14 @@ public class Test {
         //Set requirement port for SERVER
         int PORT = 20;
 
-        Server server = new Server(PORT, MAX_CONNECTION);
+        Server server = Server.getInstance();
+        //Server server = new Server(PORT, MAX_CONNECTION);
 
         //Undo for start test server, packet for test server have been sending by test client
-        /*
+
         Thread thread = new Thread(new Test_Server());
         thread.start();
-        */
+
         try {
             server.configurate();
             server.start();

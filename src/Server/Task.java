@@ -4,33 +4,85 @@ import Exceptions.End;
 import Exceptions.NoData;
 
 import java.io.IOException;
-import java.net.Socket;
-import java.nio.channels.SocketChannel;
+import java.net.*;
+import java.nio.ByteBuffer;
+import java.nio.channels.*;
+import java.util.Iterator;
+import java.util.Set;
 
-public interface Task {
+public class Task implements Runnable, Task_I {
 
-    void parse_request_SOCKS4() throws IOException, End;
+    private SocketChannel client;
+    private ByteBuffer buffer;
+    int num;
 
-    void connect_to_destinationServer_SOCKS4(byte[] ip_v4, short port) throws IOException, End;
+    public Task(SocketChannel client_, int num_) {
+        num = num_;
+        System.out.println("NUM:" + num);
+        buffer = ByteBuffer.allocate(4096);
+        client = client_;
+        try {
+            client.configureBlocking(true);
+        } catch (IOException e) {
+            System.out.println(e.getMessage());
+        }
+    }
 
-    boolean request_to_BD(String ID, String PW);
+    @Override
+    public void run() {
+        System.out.println("Hi");
+        try {
+            receive(client);
+        } catch (End e){
+            shutdown_task();
+        }
 
-    boolean ident_SOCKS5(SocketChannel client) throws End;
+        try {
+            switch (buffer.get()) {
+                case 0x04:
+                    new Socks4(client, buffer).parse();
+                    System.out.println("Bye");
+                    break;
+                case 0x05:
+                    new Socks5(client, buffer, num).parse();
+                    System.out.println("Bye");
+                    break;
+                default:
+                    shutdown_task();
+                    break;
+            }
+        }catch(End e){
+            System.out.println("Bye");
+            System.out.println("interrupt by end, cause is in Socks-class");
+            e.printStackTrace();
+        }
+    }
 
-    void connect_to_destinationServer_SOCKS5(byte ip_type, byte[] ip_v4, byte[] ip_v6, String host, short port) throws IOException, End;
 
-    boolean ident_SOCKS4(byte[] id);
+    @Override
+    public void receive(SocketChannel from) throws End {
+        buffer.clear();
+        try{
+            int packet_length;
+            if((packet_length = from.read(buffer))<0){
+                throw new End();
+            }
+        } catch (IOException e) {
+            throw new End();
+        }
+        //System.out.println("GET BYTES: " + packet_length);
+        buffer.rewind();
+    }
 
-    void receive_buffer(SocketChannel socket) throws End;
-
-    void send_buffer(SocketChannel socket) throws End;
-
-    void streaming() throws IOException, NoData, End;
-
-    void parse_request_SOCKS5() throws IOException, End;
-
-    byte pick_auth_method_SOCKS5(byte[] methods);
-
-    void shutdown_task() throws IOException, End;
+    @Override
+    public void shutdown_task(){
+        System.out.println("interrupt by shutdown, cause in Task-class");
+        System.out.println("Bye");
+        try {
+            client.socket().close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
 
 }

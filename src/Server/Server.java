@@ -2,30 +2,39 @@ package Server;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.nio.channels.SelectionKey;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 public class Server implements Server_I{
-    int MAX_CONNECTIONS = 10;
+    int MAX_CONNECTIONS = 1;
     String HOST = "localhost";
     int PORT = 20;
     ThreadPoolExecutor threadPoolExecutor;
     ThreadFactory socketFactory;
     ServerSocketChannel serverSocket;
     boolean isOn = true;
+    ThreadPool pool;
 
-
-    Server(){
+    private Server(){
         setThreadPoolExecutor((ThreadPoolExecutor) Executors.newFixedThreadPool(MAX_CONNECTIONS));
     }
 
-    public Server(int port, int max_connections){
+    static Server instance = new Server(20, 1);
+
+    public static Server getInstance(){
+        return instance;
+    }
+
+    private Server(int port, int max_connections){
         PORT = port;
         MAX_CONNECTIONS = max_connections;
         setThreadPoolExecutor((ThreadPoolExecutor) Executors.newFixedThreadPool(MAX_CONNECTIONS));
+        pool = new ThreadPool();
     }
 
     @Override
@@ -82,18 +91,32 @@ public class Server implements Server_I{
 
     @Override
     public void start() throws IOException {
-        while(isOn) {
-            SocketChannel client = serverSocket.accept();
-            threadPoolExecutor.execute(new Connection(client));
+        int i = 0;
+        //threadPoolExecutor.setKeepAliveTime(2000, TimeUnit.MILLISECONDS);
+        while(isOn){
+            if(threadPoolExecutor.getQueue().size()>10){
+                threadPoolExecutor.getQueue().forEach(k->threadPoolExecutor.remove(k));
+            }
+            SocketChannel socket = serverSocket.accept();
+            socket.socket().setKeepAlive(true);
+            threadPoolExecutor.execute(new Task(socket,++i));
+            System.out.println("PoolSize: " + threadPoolExecutor.getPoolSize());
+            System.out.println("Active: " + threadPoolExecutor.getActiveCount());
+            System.out.println("Queue: " + threadPoolExecutor.getQueue().size());
+
         }
-        shutdown();
+        //serverSocket.configureBlocking(false);
+        //pool.register(serverSocket, SelectionKey.OP_ACCEPT, threadPoolExecutor);
+    }
+
+    public synchronized ThreadPool getSelectorsPool(){
+        return pool;
     }
 
     @Override
     public void shutdown() {
         isOn = false;
         threadPoolExecutor.shutdownNow();
-        BD.getInstance().clear();
     }
 
 }
