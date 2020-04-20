@@ -1,7 +1,9 @@
-package Server;
+package Server.Protocols;
 
 import Exceptions.End;
-import Exceptions.NoData;
+import Server.BD.BD;
+import Server.Selectors.MySelector;
+import Server.Server;
 import javafx.util.Pair;
 
 import java.net.InetAddress;
@@ -14,9 +16,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
-public class Socks5 implements Socks_I{
-    Thread thread = Thread.currentThread();
-    int timeout = 100000;
+public class Socks5 implements Socks_I {
+    private Thread thread = Thread.currentThread();
+    private int timeout = 100000;
     private MySelector client_selector = null;
     private MySelector server_selector = null;
     private SocketChannel client;
@@ -24,9 +26,15 @@ public class Socks5 implements Socks_I{
     private ByteBuffer buffer;
     private volatile boolean isClose = false;
 
-
     ReentrantLock lock = new ReentrantLock();
     Condition condition = lock.newCondition();
+
+
+    public Socks5(SocketChannel client_, ByteBuffer buffer_, int timeout_){
+        client = client_;
+        buffer = buffer_;
+        timeout = timeout_;
+    }
 
     public Socks5(SocketChannel client_, ByteBuffer buffer_){
         client = client_;
@@ -60,6 +68,7 @@ public class Socks5 implements Socks_I{
                 send(client);
                 shutdown();
             }
+            System.out.println("Ident!");
             buffer.clear();
             buffer.put((byte)0x01);
             buffer.put((byte)0x00);
@@ -133,7 +142,6 @@ public class Socks5 implements Socks_I{
             lock.unlock();
         }
     }
-
 
 
     @Override
@@ -283,11 +291,10 @@ public class Socks5 implements Socks_I{
 
     @Override
     public void close_sockets(){
-        System.out.println("CLose socket: " + getThread().getName());
+        System.out.println("Close socket for thread: " + getThread().getName());
         try {
             if(server_selector!=null)Server.getInstance().getSelectorsPool().unregister(server_selector);
             if(client_selector!=null)Server.getInstance().getSelectorsPool().unregister(client_selector);
-
             if(!client.socket().isClosed()) client.socket().close();
             if(server!=null) if(!server.socket().isClosed()) server.socket().close();
         } catch (Exception e) {

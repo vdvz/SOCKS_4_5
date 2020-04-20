@@ -1,5 +1,7 @@
 package Server;
 
+import Server.SelectorPool.ThreadPool;
+
 import java.io.IOException;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -12,6 +14,8 @@ public interface Server_I {
 
     void start() throws IOException;
 
+    ThreadPool getSelectorsPool();
+
     void shutdown();
 
     ThreadFactory getSocketFactory();
@@ -19,6 +23,12 @@ public interface Server_I {
     void setSocketFactory(ThreadFactory factory);
 
     ThreadPoolExecutor getThreadPoolExecutor();
+
+    void setHost(String host);
+
+    String getHost();
+
+    void setThreadPool(ThreadPool pool_);
 
     void setPort(int port);
 
@@ -29,7 +39,5 @@ public interface Server_I {
     void setMaximumConnections(int count_connections);
 
     void setThreadPoolExecutor(ThreadPoolExecutor executor);
-
-
 
 }

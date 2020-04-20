@@ -1,4 +1,6 @@
-package Server;
+package Server.BD;
+
+import Server.Server;
 
 public interface BD_I {
 

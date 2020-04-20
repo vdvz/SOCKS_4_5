@@ -1,14 +1,12 @@
-package Server;
+package Server.Connection;
 
 import Exceptions.End;
-import Exceptions.NoData;
+import Server.Protocols.Socks4;
+import Server.Protocols.Socks5;
 
 import java.io.IOException;
-import java.net.*;
 import java.nio.ByteBuffer;
 import java.nio.channels.*;
-import java.util.Iterator;
-import java.util.Set;
 
 public class Task implements Runnable, Task_I {
 

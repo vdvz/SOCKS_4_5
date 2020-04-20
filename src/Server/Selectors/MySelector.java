@@ -1,45 +1,58 @@
-package Server;
+package Server.Selectors;
 
-import Exceptions.End;
+import Server.Connection.Task;
+import Server.Protocols.Socks_I;
 import javafx.util.Pair;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.*;
-import java.util.Arrays;
 import java.util.Iterator;
 import java.util.Set;
 import java.util.concurrent.ThreadPoolExecutor;
 
-public class MySelector implements Runnable{
+public class MySelector implements Runnable, MySelector_I{
 
     private volatile boolean isLock = false;
     private boolean isOn = true;
     private Selector selector;
     private ByteBuffer buffer;
 
-    MySelector(){
+    public MySelector(){
         buffer = ByteBuffer.allocate(4096);
         try {
             selector = Selector.open();
         } catch (IOException e) {
-            System.out.println(e.getMessage());
             e.printStackTrace();
         }
     }
 
+    @Override
+    public void setBuffer(ByteBuffer buffer_){
+        buffer = buffer_;
+    }
+
+    @Override
+    public ByteBuffer getBuffer(){
+        return buffer;
+    }
+
+    @Override
     public  void setLock(){
         isLock = true;
     }
 
+    @Override
     public void setUnlock(){
         isLock = false;
     }
 
+    @Override
     public Selector getSelector(){
         return selector;
     }
 
+    @Override
     public synchronized SelectionKey register(SocketChannel channel, int ops, Object attach){
         try {
             setLock();
@@ -54,6 +67,7 @@ public class MySelector implements Runnable{
         return null;
     }
 
+    @Override
     public void register(ServerSocketChannel channel, int ops, Object attach){
         try {
             setLock();
@@ -79,6 +93,7 @@ public class MySelector implements Runnable{
                     while (iterator.hasNext()) {
                         SelectionKey key = iterator.next();
                         if(key.isValid()) {
+
                             if (key.isReadable()) {
                                 Pair<Socks_I, SocketChannel> pair = (Pair<Socks_I, SocketChannel>) key.attachment();
                                 SocketChannel to = pair.getValue();
@@ -92,13 +107,13 @@ public class MySelector implements Runnable{
                                     //ex.printStackTrace();
                                 }
                             }
-                        }
 
-                        if(key.isValid()) {
-                            if (key.isAcceptable()) {
+                            /*if (key.isAcceptable()) {
                                 ThreadPoolExecutor threadPoolExecutor = (ThreadPoolExecutor) key.attachment();
                                 Acceptable(threadPoolExecutor, (ServerSocketChannel) key.channel());
-                            }
+                            }*/
+
+
                         }
 
                         iterator.remove();
@@ -113,6 +128,7 @@ public class MySelector implements Runnable{
         }
     }
 
+    @Override
     public void Readable(SocketChannel in, SocketChannel out, Socks_I socks_task) throws IOException {
         int send = -1;
         try {
@@ -140,18 +156,32 @@ public class MySelector implements Runnable{
 
     }
 
-
+    @Override
     public void Connectable(){
     }
 
-    public void Acceptable(ThreadPoolExecutor threadPoolExecutor, ServerSocketChannel socket) throws IOException {
-        System.out.println("accept now");
-        threadPoolExecutor.execute(new Task(socket.accept()));
+    @Override
+    public void Acceptable(ThreadPoolExecutor threadPoolExecutor, ServerSocketChannel serverSocket) throws IOException {
+
+        if(threadPoolExecutor.getQueue().size()>1){
+            threadPoolExecutor.getQueue().forEach(threadPoolExecutor::remove);
+        }
+
+        SocketChannel socket = serverSocket.accept();
+        socket.socket().setKeepAlive(true);
+        threadPoolExecutor.execute(new Task(socket));
     }
 
+    @Override
     public void shutdown(){
+        try {
+            selector.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
         isOn = false;
         Thread.currentThread().interrupt();
     }
+
 
 }

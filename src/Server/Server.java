@@ -1,17 +1,18 @@
 package Server;
 
+import Server.Connection.Task;
+import Server.SelectorPool.ThreadPool;
+
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.nio.channels.SelectionKey;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
 
 public class Server implements Server_I{
-    int MAX_CONNECTIONS = 1;
+    int MAX_CONNECTIONS = 10000;
     String HOST = "localhost";
     int PORT = 20;
     ThreadPoolExecutor threadPoolExecutor;
@@ -26,7 +27,7 @@ public class Server implements Server_I{
 
     static Server instance = new Server(20, 10000);
 
-    public static Server getInstance(){
+    public synchronized static Server getInstance(){
         return instance;
     }
 
@@ -34,11 +35,27 @@ public class Server implements Server_I{
         PORT = port;
         MAX_CONNECTIONS = max_connections;
         setThreadPoolExecutor((ThreadPoolExecutor) Executors.newFixedThreadPool(MAX_CONNECTIONS));
-        pool = new ThreadPool();
+        pool = new ThreadPool(100);
     }
 
     @Override
-    public void setPort(int port){
+    public void setHost(String host){
+        HOST = host;
+    }
+
+    @Override
+    public String getHost(){
+        return HOST;
+    }
+
+    @Override
+    public void setThreadPool(ThreadPool pool_){
+        if(pool!=null) pool.shutdown();
+        pool = pool_;
+    }
+
+    @Override
+    public void setPort(int port) {
         PORT = port;
     }
 
@@ -55,6 +72,7 @@ public class Server implements Server_I{
     @Override
     public void setMaximumConnections(int count_connections){
         MAX_CONNECTIONS = count_connections;
+        threadPoolExecutor.setMaximumPoolSize(MAX_CONNECTIONS);
     }
 
     @Override
@@ -91,13 +109,12 @@ public class Server implements Server_I{
 
     @Override
     public void start() throws IOException {
-        //threadPoolExecutor.setKeepAliveTime(2000, TimeUnit.MILLISECONDS);
         while(isOn){
+            //Если набирается очередь очищаем ее
             if(threadPoolExecutor.getQueue().size()>1){
                 threadPoolExecutor.getQueue().forEach(k->threadPoolExecutor.remove(k));
             }
             SocketChannel socket = serverSocket.accept();
-            if(threadPoolExecutor.getPoolSize() == threadPoolExecutor.getMaximumPoolSize()) continue;
             socket.socket().setKeepAlive(true);
             threadPoolExecutor.execute(new Task(socket));
             //System.out.println("PoolSize: " + threadPoolExecutor.getPoolSize());
@@ -109,6 +126,7 @@ public class Server implements Server_I{
         //pool.register(serverSocket, SelectionKey.OP_ACCEPT, threadPoolExecutor);
     }
 
+    @Override
     public synchronized ThreadPool getSelectorsPool(){
         return pool;
     }
@@ -116,6 +134,7 @@ public class Server implements Server_I{
     @Override
     public void shutdown() {
         isOn = false;
+        if(pool!=null) pool.shutdown();
         threadPoolExecutor.shutdownNow();
     }
 

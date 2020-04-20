@@ -1,7 +1,8 @@
-package Server;
+package Server.Connection;
 
 import Exceptions.End;
 import Exceptions.NoData;
+import Server.Server;
 
 import java.io.IOException;
 import java.net.Socket;

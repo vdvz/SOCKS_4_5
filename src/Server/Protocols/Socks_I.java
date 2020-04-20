@@ -1,7 +1,8 @@
-package Server;
+package Server.Protocols;
 
 import Exceptions.End;
 import Exceptions.NoData;
+import Server.Server;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;

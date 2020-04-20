@@ -1,7 +1,6 @@
-package Server;
+package Server.BD;
 
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.Map;
 
 public class BD implements BD_I {

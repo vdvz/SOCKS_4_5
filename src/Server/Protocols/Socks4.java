@@ -1,7 +1,9 @@
-package Server;
+package Server.Protocols;
 
 import Exceptions.End;
-import Exceptions.NoData;
+import Server.BD.BD;
+import Server.Selectors.MySelector;
+import Server.Server;
 import javafx.util.Pair;
 
 import java.io.IOException;
@@ -16,16 +18,24 @@ import java.util.concurrent.locks.ReentrantLock;
 
 public class Socks4 implements Socks_I {
 
-    private SocketChannel client;
-    private SocketChannel server;
+    private Thread thread = Thread.currentThread();
+    private int timeout = 100000;
+
     private MySelector client_selector = null;
     private MySelector server_selector = null;
-    Thread thread = Thread.currentThread();
-    private volatile boolean isValid = false;
+    private SocketChannel client;
+    private SocketChannel server = null;
     private ByteBuffer buffer;
-    private boolean isClose = false;
+    private volatile boolean isClose = false;
+
     ReentrantLock lock = new ReentrantLock();
     Condition condition = lock.newCondition();
+
+    public Socks4(SocketChannel client_, ByteBuffer buffer_, int timeout_) {
+        client = client_;
+        buffer = buffer_;
+        timeout = timeout_;
+    }
 
     public Socks4(SocketChannel client_, ByteBuffer buffer_) {
         client = client_;
@@ -77,13 +87,16 @@ public class Socks4 implements Socks_I {
             shutdown();
         }
 
+        System.out.println("Streaming");
 
         try{
             client.configureBlocking(false);
             server.configureBlocking(false);
-        } catch (IOException e) {
-            e.printStackTrace();
+        } catch (Exception e) {
+            System.out.println(e.getMessage());
+            shutdown();
         }
+
 
         server_selector = Server.getInstance().getSelectorsPool().register(server, SelectionKey.OP_READ, new Pair<>(this, client));
         client_selector = Server.getInstance().getSelectorsPool().register(client, SelectionKey.OP_READ, new Pair<>(this, server));
@@ -92,9 +105,7 @@ public class Socks4 implements Socks_I {
         try{
             while(!isClose){
                 try {
-                    if(condition.await(100000, TimeUnit.MILLISECONDS)){
-                        isValid = false;
-                    } else isClose = true;
+                    if(!condition.await(timeout,TimeUnit.MILLISECONDS)) isClose = true;
                 } catch (InterruptedException e) {
                     e.printStackTrace();
                 }
@@ -109,7 +120,7 @@ public class Socks4 implements Socks_I {
     }
 
     @Override
-    public void setCloseFLag(){
+    public void setCloseFLag() {
         lock.lock();
         try {
             if(!isClose) {
@@ -122,11 +133,11 @@ public class Socks4 implements Socks_I {
         }
     }
 
+
     @Override
-    public void setValidFLag() {
+    public void setValidFLag(){
         lock.lock();
         try {
-            isValid = true;
             condition.signal();
         }finally {
             lock.unlock();
@@ -165,11 +176,14 @@ public class Socks4 implements Socks_I {
     }
 
     @Override
-    public void close_sockets() {
+    public void close_sockets(){
+        System.out.println("Close socket for thread: " + getThread().getName());
         try {
+            if(server_selector!=null)Server.getInstance().getSelectorsPool().unregister(server_selector);
+            if(client_selector!=null)Server.getInstance().getSelectorsPool().unregister(client_selector);
             if(!client.socket().isClosed()) client.socket().close();
-            if(!client.socket().isClosed() && server!=null) server.socket().close();
-        } catch (IOException e) {
+            if(server!=null) if(!server.socket().isClosed()) server.socket().close();
+        } catch (Exception e) {
             e.printStackTrace();
         }
     }
