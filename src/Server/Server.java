@@ -5,6 +5,7 @@ import Server.SelectorPool.ThreadPool;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.nio.channels.SelectionKey;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
 import java.util.concurrent.Executors;
@@ -109,7 +110,7 @@ public class Server implements Server_I{
 
     @Override
     public void start() throws IOException {
-        while(isOn){
+        /*while(isOn){
             //Если набирается очередь очищаем ее
             if(threadPoolExecutor.getQueue().size()>1){
                 threadPoolExecutor.getQueue().forEach(k->threadPoolExecutor.remove(k));
@@ -121,9 +122,9 @@ public class Server implements Server_I{
             //System.out.println("Active: " + threadPoolExecutor.getActiveCount());
             //System.out.println("Queue: " + threadPoolExecutor.getQueue().size());
 
-        }
-        //serverSocket.configureBlocking(false);
-        //pool.register(serverSocket, SelectionKey.OP_ACCEPT, threadPoolExecutor);
+        }*/
+        serverSocket.configureBlocking(false);
+        pool.register(serverSocket, SelectionKey.OP_ACCEPT, threadPoolExecutor);
     }
 
     @Override

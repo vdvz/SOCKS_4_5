@@ -107,11 +107,13 @@ public class MySelector implements Runnable, MySelector_I{
                                     //ex.printStackTrace();
                                 }
                             }
-
-                            /*if (key.isAcceptable()) {
+                        }
+                        if(key.isValid()){
+                            if (key.isAcceptable() && !key.isReadable()) {
+                                System.out.println("Accept");
                                 ThreadPoolExecutor threadPoolExecutor = (ThreadPoolExecutor) key.attachment();
                                 Acceptable(threadPoolExecutor, (ServerSocketChannel) key.channel());
-                            }*/
+                            }
 
 
                         }
@@ -170,6 +172,7 @@ public class MySelector implements Runnable, MySelector_I{
         SocketChannel socket = serverSocket.accept();
         socket.socket().setKeepAlive(true);
         threadPoolExecutor.execute(new Task(socket));
+
     }
 
     @Override
